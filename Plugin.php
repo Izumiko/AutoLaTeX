@@ -4,7 +4,7 @@
  * 
  * @package AutoLaTeX 
  * @author bLue
- * @version 0.1.0
+ * @version 0.2.0
  * @link https://dreamer.blue
  */
 class AutoLaTeX_Plugin implements Typecho_Plugin_Interface {
@@ -46,6 +46,14 @@ class AutoLaTeX_Plugin implements Typecho_Plugin_Interface {
         );
         $name = new Typecho_Widget_Helper_Form_Element_Select('rendering', $renderingList, 'KaTeX', _t('选择 LaTeX 渲染方式'));
         $form->addInput($name->addRule('enum', _t('请选择 LaTeX 渲染方式'), $renderingList));
+
+        $provideTypeList = array(
+            'local' => '本地',
+            'jsDelivr' => 'jsDelivr',
+            'cdnjs' => 'cdnjs',
+        );
+        $provide = new Typecho_Widget_Helper_Form_Element_Select('provide', $provideTypeList, 'local', _t('选择LaTeX脚本提供方式'));
+        $form->addInput($provide->addRule('enum', _t('请选择脚本提供方式'), $provideTypeList));
     }
 
     /**
@@ -74,12 +82,25 @@ class AutoLaTeX_Plugin implements Typecho_Plugin_Interface {
     public static function header() {
         $pluginDir = Helper::options()->pluginUrl . '/AutoLaTeX';
         $rendering = Helper::options()->plugin('AutoLaTeX')->rendering;
+        $provide = Helper::options()->plugin('AutoLaTeX')->provide;
+        $url = "$pluginDir/KaTeX";
+        switch ($provide) {
+            case 'local':
+                $url = "$pluginDir/KaTeX";
+                break;
+            case 'jsDelivr':
+                $url = 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist';
+                break;
+            case 'cdnjs':
+                $url = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8';
+                break;
+        }
         switch($rendering) {
             case 'MathJax':
                 break;
             case 'KaTeX':
                 echo <<<HTML
-                    <link href="{$pluginDir}/KaTeX/katex.min.css" rel="stylesheet">
+                    <link href="$url/katex.min.css" rel="stylesheet">
 HTML;
                 break;
         }
@@ -94,21 +115,54 @@ HTML;
     public static function footer() {
         $pluginDir = Helper::options()->pluginUrl . '/AutoLaTeX';
         $rendering = Helper::options()->plugin('AutoLaTeX')->rendering;
+        $provide = Helper::options()->plugin('AutoLaTeX')->provide;
+        $url = "$pluginDir/$rendering";
+        switch ($provide) {
+            case 'local':
+                $url = "$pluginDir/$rendering";
+                break;
+            case 'jsDelivr':
+                switch ($rendering) {
+                    case 'MathJax':
+                        $url = 'https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5';
+                        break;
+                    case 'KaTeX':
+                        $url = 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist';
+                        break;
+                }
+                break;
+            case 'cdnjs':
+                switch ($rendering) {
+                    case 'MathJax':
+                        $url = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5';
+                        break;
+                    case 'KaTeX':
+                        $url = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8';
+                        break;
+                }
+                break;
+        }
         switch($rendering) {
             case 'MathJax':
                 echo <<<HTML
-                    <script src="{$pluginDir}/MathJax/MathJax.js?config=TeX-AMS-MML_HTMLorMML,local/local"></script>
+                    <script id="MathJax-script" async src="$url/tex-mml-chtml.js"></script>
                     <script>
-                        function triggerRenderingLaTeX(element) {
-                            MathJax.Hub.Queue(["Typeset", MathJax.Hub, element]);
+                        function typeset(element) {
+                            MathJax.startup.promise = MathJax.startup.promise
+                                .then(() => MathJax.typesetPromise(element))
+                                .catch((err) => console.log('Typeset failed: ' + err.message));
+                            return MathJax.startup.promise;
+                        }
+                        async function triggerRenderingLaTeX(element) {
+                            await typeset([element]);
                         }
                     </script>
 HTML;
                 break;
             case 'KaTeX':
                 echo <<<HTML
-                    <script src="{$pluginDir}/KaTeX/katex.min.js"></script>
-                    <script src="{$pluginDir}/KaTeX/auto-render.min.js"></script>
+                    <script defer src="$url/katex.min.js"></script>
+                    <script defer src="$url/contrib/auto-render.min.js"></script>
                     <script>
                         function triggerRenderingLaTeX(element) {
                             renderMathInElement(
@@ -134,8 +188,8 @@ HTML;
         echo <<<HTML
             <script>
                 document.addEventListener("DOMContentLoaded", function() {
-                    var wmdPreviewLink = document.querySelector("a[href='#wmd-preview']");
-                    var wmdPreviewContainer = document.querySelector("#wmd-preview");
+                    const wmdPreviewLink = document.querySelector("a[href='#wmd-preview']");
+                    const wmdPreviewContainer = document.querySelector("#wmd-preview");
                     if(wmdPreviewLink && wmdPreviewContainer) {
                         wmdPreviewLink.onclick = function() {
                             triggerRenderingLaTeX(wmdPreviewContainer);
